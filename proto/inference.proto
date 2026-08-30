@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package inference;
+
+option go_package = "github.com/veerjain-1/code-anomaly-engine/proto";
+
+// InferenceService provides real-time code anomaly detection
+// powered by a custom-trained CodeBERT model served via ONNX Runtime.
+service InferenceService {
+  // Predict analyzes a single code snippet for anomalies.
+  rpc Predict(PredictRequest) returns (PredictResponse);
+  
+  // PredictBatch analyzes multiple code snippets in a single call
+  // for higher throughput.
+  rpc PredictBatch(PredictBatchRequest) returns (PredictBatchResponse);
+
+  // HealthCheck returns the current health status of the inference engine.
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+message PredictRequest {
+  // The source code snippet to analyze.
+  string code = 1;
+  
+  // Optional metadata for tracing.
+  string repo = 2;
+  string commit_sha = 3;
+  string file_path = 4;
+  int32 start_line = 5;
+  int32 end_line = 6;
+}
+
+message PredictResponse {
+  // Whether the code is predicted to contain an anomaly (vulnerability/defect).
+  bool is_anomalous = 1;
+  
+  // Confidence score [0.0, 1.0] — probability of being anomalous.
+  float confidence = 2;
+  
+  // Human-readable label: "vulnerable" or "clean".
+  string label = 3;
+  
+  // Inference latency in milliseconds.
+  float latency_ms = 4;
+  
+  // Echo back the metadata for correlation.
+  string repo = 5;
+  string commit_sha = 6;
+  string file_path = 7;
+  int32 start_line = 8;
+  int32 end_line = 9;
+}
+
+message PredictBatchRequest {
+  repeated PredictRequest snippets = 1;
+}
+
+message PredictBatchResponse {
+  repeated PredictResponse results = 1;
+  
+  // Total batch inference latency in milliseconds.
+  float total_latency_ms = 2;
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  enum Status {
+    UNKNOWN = 0;
+    SERVING = 1;
+    NOT_SERVING = 2;
+  }
+  Status status = 1;
+  string model_name = 2;
+  int64 model_load_time_ms = 3;
+  int64 total_predictions = 4;
+  float avg_latency_ms = 5;
+}

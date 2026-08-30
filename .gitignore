@@ -1,0 +1,35 @@
+# Build artifacts
+bin/
+*.exe
+
+# Python
+ml/.venv/
+ml/data/processed/
+ml/checkpoints/
+__pycache__/
+*.pyc
+.ruff_cache/
+
+# Rust
+services/inference/target/
+
+# Node
+dashboard/node_modules/
+dashboard/dist/
+
+# ONNX model artifacts (tracked via LFS or downloaded)
+*.onnx
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
