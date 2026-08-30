@@ -272,5 +272,18 @@ func isCodeFile(path string) bool {
 // ParseDiff extracts function-level snippets from a unified diff string.
 // Exported so it can be called by the gateway for diff enrichment.
 func ParseDiff(diff string, repo string, commitSHA string) []CodeSnippet {
-	return parser.ExtractSnippets(diff, repo, commitSHA)
+	parsed := parser.ExtractSnippets(diff, repo, commitSHA)
+	var snippets []CodeSnippet
+	for _, p := range parsed {
+		snippets = append(snippets, CodeSnippet{
+			Code:      p.Code,
+			Repo:      p.Repo,
+			CommitSHA: p.CommitSHA,
+			FilePath:  p.FilePath,
+			StartLine: p.StartLine,
+			EndLine:   p.EndLine,
+			Timestamp: time.Now().UnixMilli(),
+		})
+	}
+	return snippets
 }

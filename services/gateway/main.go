@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/veerjain-1/code-anomaly-engine/services/gateway/internal/api"
+	"github.com/veerjain-1/code-anomaly-engine/services/gateway/internal/kafka"
 	"github.com/veerjain-1/code-anomaly-engine/services/gateway/internal/ws"
 )
 
@@ -34,6 +35,37 @@ func main() {
 
 	// Anomaly store (in-memory for demo)
 	store := api.NewAnomalyStore()
+
+	// Kafka -> gRPC bridge
+	topic := getEnv("KAFKA_TOPIC", "code-snippets")
+	bridge, err := kafka.NewBridge(kafkaBroker, topic, inferenceAddr, func(result kafka.AnomalyResult) {
+		// Save to store
+		store.Add(api.Anomaly{
+			ID:          result.ID,
+			Repo:        result.Repo,
+			CommitSHA:   result.CommitSHA,
+			FilePath:    result.FilePath,
+			StartLine:   result.StartLine,
+			EndLine:     result.EndLine,
+			Code:        result.Code,
+			IsAnomalous: result.IsAnomalous,
+			Confidence:  result.Confidence,
+			Label:       result.Label,
+			LatencyMs:   result.LatencyMs,
+			Timestamp:   result.Timestamp,
+		})
+
+		// Broadcast to WebSocket clients
+		b, _ := json.Marshal(result)
+		hub.Broadcast(b)
+	})
+	if err != nil {
+		slog.Error("Failed to initialize Kafka bridge", "error", err)
+		os.Exit(1)
+	}
+
+	bridgeCtx, bridgeCancel := context.WithCancel(context.Background())
+	bridge.Start(bridgeCtx)
 
 	// HTTP server
 	mux := http.NewServeMux()
@@ -93,6 +125,9 @@ func main() {
 
 	<-ctx.Done()
 	slog.Info("Shutting down gateway...")
+
+	bridgeCancel()
+	bridge.Stop()
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

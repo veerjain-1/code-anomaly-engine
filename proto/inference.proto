@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package inference;
 
-option go_package = "github.com/veerjain-1/code-anomaly-engine/proto";
+option go_package = "github.com/veerjain-1/code-anomaly-engine/services/gateway/internal/proto";
 
 // InferenceService provides real-time code anomaly detection
 // powered by a custom-trained CodeBERT model served via ONNX Runtime.
