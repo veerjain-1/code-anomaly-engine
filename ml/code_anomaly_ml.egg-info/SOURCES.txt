@@ -1,0 +1,6 @@
+pyproject.toml
+code_anomaly_ml.egg-info/PKG-INFO
+code_anomaly_ml.egg-info/SOURCES.txt
+code_anomaly_ml.egg-info/dependency_links.txt
+code_anomaly_ml.egg-info/requires.txt
+code_anomaly_ml.egg-info/top_level.txt

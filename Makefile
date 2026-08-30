@@ -17,7 +17,7 @@ download-data:
 
 train: download-data
 	@echo "🧠 Training CodeBERT on Devign..."
-	cd ml && .venv/bin/python train.py --epochs 3 --batch-size 16
+	cd ml && .venv/bin/python train.py --epochs 1 --batch-size 16
 
 export:
 	@echo "📦 Exporting model to ONNX..."

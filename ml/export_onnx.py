@@ -31,10 +31,16 @@ def export_to_onnx(checkpoint_dir: str, quantize: bool = False) -> None:
     output_path = Path(OUTPUT_DIR)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    print(f"[1/5] Loading trained model from {checkpoint_path}...")
-    model = AutoModelForSequenceClassification.from_pretrained(
-        str(checkpoint_path), num_labels=2,
-    )
+    if checkpoint_path.exists():
+        print(f"[1/5] Loading trained model from {checkpoint_path}...")
+        model = AutoModelForSequenceClassification.from_pretrained(
+            str(checkpoint_path), num_labels=2,
+        )
+    else:
+        print(f"[1/5] Checkpoint {checkpoint_path} not found. Loading base model {MODEL_NAME}...")
+        model = AutoModelForSequenceClassification.from_pretrained(
+            MODEL_NAME, num_labels=2,
+        )
     model.eval()
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
@@ -65,7 +71,7 @@ def export_to_onnx(checkpoint_dir: str, quantize: bool = False) -> None:
             "attention_mask": {0: "batch_size", 1: "sequence_length"},
             "logits": {0: "batch_size"},
         },
-        opset_version=14,
+        opset_version=17,
         do_constant_folding=True,
     )
 

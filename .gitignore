@@ -19,6 +19,7 @@ dashboard/dist/
 
 # ONNX model artifacts (tracked via LFS or downloaded)
 *.onnx
+*.onnx.data
 
 # IDE
 .idea/
