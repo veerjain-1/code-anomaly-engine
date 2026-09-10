@@ -32,7 +32,7 @@ tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 
 # Metrics
 metrics = "0.23"
-metrics-exporter-prometheus = "0.15"
+metrics-exporter-prometheus = "0.18"
 
 # Utilities
 anyhow = "1"
