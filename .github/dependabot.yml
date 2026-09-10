@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/dashboard"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "pip"
+    directory: "/ml"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "cargo"
+    directory: "/services/inference"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "gomod"
+    directory: "/services/gateway"
+    schedule:
+      interval: "weekly"
