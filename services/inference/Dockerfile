@@ -6,7 +6,7 @@ COPY services/inference/ /app/
 RUN cargo build --release
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates libssl3 netcat-openbsd && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/inference-server /usr/local/bin/inference-server
 COPY services/inference/models/ /app/models/
 WORKDIR /app
