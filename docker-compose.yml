@@ -27,7 +27,14 @@ services:
     volumes:
       - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml
     depends_on:
-      - gateway
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   grafana:
     image: grafana/grafana:10.4.0
@@ -38,7 +45,14 @@ services:
     volumes:
       - ./infra/grafana/dashboards:/etc/grafana/provisioning/dashboards
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   # ─── Application Services ──────────────────────────────────
   ingestion:
@@ -55,6 +69,12 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   inference:
     build:
@@ -66,6 +86,13 @@ services:
       RUST_LOG: info
     volumes:
       - ./services/inference/models:/app/models
+    healthcheck:
+      # TCP probe until an HTTP /health endpoint lands (see #12).
+      test: ["CMD", "nc", "-z", "127.0.0.1", "50051"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   gateway:
     build:
@@ -81,7 +108,13 @@ services:
       kafka:
         condition: service_healthy
       inference:
-        condition: service_started
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   dashboard:
     build:
@@ -93,4 +126,5 @@ services:
       VITE_API_URL: http://localhost:8080
       VITE_WS_URL: ws://localhost:8080/ws/feed
     depends_on:
-      - gateway
+      gateway:
+        condition: service_healthy
