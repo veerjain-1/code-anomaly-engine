@@ -4,6 +4,7 @@
 //! Designed for sub-50ms p99 latency on single predictions.
 
 mod engine;
+mod health;
 
 use anyhow::Result;
 use clap::Parser;
@@ -44,6 +45,12 @@ struct Args {
     /// gRPC server port
     #[arg(long, default_value_t = 50051)]
     port: u16,
+
+    /// Plain-HTTP health-check port, for infra (load balancers, Docker
+    /// HEALTHCHECK, simple curl-based monitors) that can't speak gRPC
+    /// health-checking protocol.
+    #[arg(long, default_value_t = 8080)]
+    health_port: u16,
 }
 
 /// gRPC service implementation backed by the ONNX engine.
@@ -188,6 +195,9 @@ async fn main() -> Result<()> {
 
     let addr: SocketAddr = format!("0.0.0.0:{}", args.port).parse()?;
     info!(%addr, "gRPC server listening");
+
+    let health_addr: SocketAddr = format!("0.0.0.0:{}", args.health_port).parse()?;
+    tokio::spawn(health::serve(health_addr));
 
     Server::builder()
         .add_service(InferenceServiceServer::new(service))
