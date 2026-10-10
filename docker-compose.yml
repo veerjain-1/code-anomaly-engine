@@ -55,6 +55,13 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+    healthcheck:
+      # ingestion already exposes GET /health (see main.go) -- just wasn't wired up.
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   inference:
     build:
@@ -66,6 +73,10 @@ services:
       RUST_LOG: info
     volumes:
       - ./services/inference/models:/app/models
+    # No Docker healthcheck yet: inference currently only exposes health via
+    # the gRPC health_check RPC (no grpc_health_probe binary bundled in the
+    # image, and no plain-HTTP endpoint merged yet -- see issue #12 / PR #17).
+    # Revisit once that lands.
 
   gateway:
     build:
@@ -82,6 +93,13 @@ services:
         condition: service_healthy
       inference:
         condition: service_started
+    healthcheck:
+      # gateway already exposes GET /health (see main.go) -- just wasn't wired up.
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   dashboard:
     build:
@@ -93,4 +111,5 @@ services:
       VITE_API_URL: http://localhost:8080
       VITE_WS_URL: ws://localhost:8080/ws/feed
     depends_on:
-      - gateway
+      gateway:
+        condition: service_healthy
