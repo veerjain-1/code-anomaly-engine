@@ -814,6 +814,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "metrics",
  "metrics-exporter-prometheus",
  "ndarray 0.16.1",
