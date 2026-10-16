@@ -7,22 +7,79 @@ on:
     branches: [ "main" ]
 
 jobs:
-  test:
+  test-go:
+    name: Go Microservices
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v5
-      with:
-        go-version: '1.22'
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: |
+            services/ingestion/go.sum
+            services/gateway/go.sum
 
-    - name: Set up Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-        override: true
+      - name: Run Ingestion Tests
+        run: |
+          cd services/ingestion
+          go test -v ./...
 
-    - name: Run Tests
-      run: make test
+      - name: Run Gateway Tests
+        run: |
+          cd services/gateway
+          go test -v ./...
+
+  test-rust:
+    name: Rust Inference Engine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            services/inference/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cargo Check
+        run: |
+          cd services/inference
+          cargo check
+
+      - name: Run Rust Tests
+        run: |
+          cd services/inference
+          cargo test --verbose
+
+  test-frontend:
+    name: Dashboard Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install & Build Dashboard
+        run: |
+          cd dashboard
+          npm ci
+          npm run build
