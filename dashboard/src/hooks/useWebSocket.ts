@@ -25,7 +25,7 @@ export function useWebSocket({ url, onMessage, reconnectInterval = 3000 }: UseWe
   const [isConnected, setIsConnected] = useState(false)
   const [lastMessage, setLastMessage] = useState<Anomaly | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>()
+  const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const connect = useCallback(() => {
     try {
