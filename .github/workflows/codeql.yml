@@ -20,13 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - language: go
-            build-mode: manual
-          - language: python
-            build-mode: none
-          - language: javascript
-            build-mode: none
+        language: [ 'go', 'python', 'javascript' ]
 
     steps:
     - name: Checkout repository
@@ -45,7 +39,7 @@ jobs:
       uses: github/codeql-action/init@v3
       with:
         languages: ${{ matrix.language }}
-        build-mode: ${{ matrix.build-mode }}
+        build-mode: ${{ matrix.language == 'go' && 'manual' || 'none' }}
 
     - name: Build Go services
       if: matrix.language == 'go'
