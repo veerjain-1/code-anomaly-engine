@@ -42,7 +42,7 @@ metrics-exporter-prometheus = "0.15"
 # Utilities
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-ndarray = "0.16"
+ndarray = "0.17"
 
 [build-dependencies]
 tonic-build = "0.12"

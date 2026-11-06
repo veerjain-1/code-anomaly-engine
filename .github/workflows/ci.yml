@@ -55,6 +55,12 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Install Protocol Buffers compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes protobuf-compiler
+          protoc --version
+
       - name: Cargo Check
         run: |
           cd services/inference
