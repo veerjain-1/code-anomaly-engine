@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,6 +18,9 @@ import (
 	"github.com/veerjain-1/code-anomaly-engine/services/ingestion/internal/kafka"
 	"github.com/veerjain-1/code-anomaly-engine/services/ingestion/internal/parser"
 )
+
+// maxWebhookPayloadBytes bounds buffered payloads, including chunked requests.
+const maxWebhookPayloadBytes int64 = 25 << 20
 
 // Handler processes GitHub webhook events.
 type Handler struct {
@@ -50,10 +54,10 @@ type PullRequestEvent struct {
 
 // PullRequest contains PR details.
 type PullRequest struct {
-	Number   int    `json:"number"`
-	Title    string `json:"title"`
-	DiffURL  string `json:"diff_url"`
-	Head     Branch `json:"head"`
+	Number  int    `json:"number"`
+	Title   string `json:"title"`
+	DiffURL string `json:"diff_url"`
+	Head    Branch `json:"head"`
 }
 
 // Branch represents a git branch reference.
@@ -93,14 +97,20 @@ type CodeSnippet struct {
 func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxWebhookPayloadBytes)
+	defer r.Body.Close()
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		var sizeError *http.MaxBytesError
+		if errors.As(err, &sizeError) {
+			http.Error(w, "Webhook payload too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		slog.Error("Failed to read request body", "error", err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
-
 	// Validate webhook signature if secret is configured
 	if h.secret != "" {
 		signature := r.Header.Get("X-Hub-Signature-256")
@@ -167,8 +177,8 @@ func (h *Handler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]any{
-		"status":    "ok",
-		"snippets":  published,
+		"status":     "ok",
+		"snippets":   published,
 		"latency_ms": duration.Milliseconds(),
 	})
 }
