@@ -8,6 +8,7 @@ use ndarray::Array2;
 use ort::{session::Session, value::Value};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::Instant;
 use tracing::{info, warn};
 
@@ -26,7 +27,7 @@ pub struct PredictionResult {
 
 /// ONNX inference engine that loads a CodeBERT model and serves predictions.
 pub struct Engine {
-    session: Session,
+    session: Mutex<Session>,
     tokenizer: tokenizers::Tokenizer,
     max_length: usize,
     total_predictions: AtomicU64,
@@ -48,7 +49,7 @@ impl Engine {
         let session = Session::builder()
             .context("Failed to create ONNX session builder")?
             .with_intra_threads(4)
-            .context("Failed to set intra-op threads")?
+            .map_err(|e| anyhow::anyhow!("Failed to set intra-op threads: {}", e))?
             .commit_from_file(model_path)
             .context("Failed to load ONNX model")?;
 
@@ -64,7 +65,7 @@ impl Engine {
         );
 
         Ok(Self {
-            session,
+            session: Mutex::new(session),
             tokenizer,
             max_length,
             total_predictions: AtomicU64::new(0),
@@ -84,8 +85,11 @@ impl Engine {
             .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
 
         let mut input_ids: Vec<i64> = encoding.get_ids().iter().map(|&id| id as i64).collect();
-        let mut attention_mask: Vec<i64> =
-            encoding.get_attention_mask().iter().map(|&m| m as i64).collect();
+        let mut attention_mask: Vec<i64> = encoding
+            .get_attention_mask()
+            .iter()
+            .map(|&m| m as i64)
+            .collect();
 
         // Truncate or pad to max_length
         input_ids.truncate(self.max_length);
@@ -97,29 +101,34 @@ impl Engine {
         }
 
         // Create ONNX input tensors
-        let input_ids_array =
-            Array2::from_shape_vec((1, self.max_length), input_ids)
-                .context("Failed to create input_ids tensor")?;
-        let attention_mask_array =
-            Array2::from_shape_vec((1, self.max_length), attention_mask)
-                .context("Failed to create attention_mask tensor")?;
+        let input_ids_array = Array2::from_shape_vec((1, self.max_length), input_ids)
+            .context("Failed to create input_ids tensor")?;
+        let attention_mask_array = Array2::from_shape_vec((1, self.max_length), attention_mask)
+            .context("Failed to create attention_mask tensor")?;
 
-        let input_ids_value = Value::from_array(input_ids_array)
-            .context("Failed to create input_ids ONNX value")?;
+        let input_ids_value =
+            Value::from_array(input_ids_array).context("Failed to create input_ids ONNX value")?;
         let attention_mask_value = Value::from_array(attention_mask_array)
             .context("Failed to create attention_mask ONNX value")?;
 
         // Run inference
-        let outputs = self
-            .session
-            .run(ort::inputs![input_ids_value, attention_mask_value]?)
-            .context("ONNX inference failed")?;
+        // Session::run requires exclusive access. Release the lock once the
+        // output has been copied so tokenization and postprocessing can overlap.
+        let logits = {
+            let mut session = self
+                .session
+                .lock()
+                .map_err(|_| anyhow::anyhow!("ONNX session lock poisoned"))?;
+            let outputs = session
+                .run(ort::inputs![input_ids_value, attention_mask_value])
+                .context("ONNX inference failed")?;
 
-        // Extract logits [batch_size=1, num_labels=2]
-        let logits_tensor = outputs[0]
-            .try_extract_tensor::<f32>()
-            .context("Failed to extract logits tensor")?;
-        let logits: Vec<f32> = logits_tensor.iter().copied().collect();
+            // Extract logits [batch_size=1, num_labels=2]
+            let (_, logits) = outputs[0]
+                .try_extract_tensor::<f32>()
+                .context("Failed to extract logits tensor")?;
+            logits.to_vec()
+        };
 
         if logits.len() < 2 {
             warn!("Unexpected logits shape: {:?}", logits);
