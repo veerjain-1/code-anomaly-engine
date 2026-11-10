@@ -63,11 +63,13 @@ func (s *AnomalyStore) Add(a Anomaly) {
 // HandleList returns all anomalies, sorted by timestamp descending.
 func (s *AnomalyStore) HandleList(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 
-	// Copy and sort by timestamp descending
+	// Snapshot under the lock; sorting and slow response writes must not block Add.
 	result := make([]Anomaly, len(s.anomalies))
 	copy(result, s.anomalies)
+	total := len(result)
+	s.mu.RUnlock()
+
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Timestamp > result[j].Timestamp
 	})
@@ -81,7 +83,7 @@ func (s *AnomalyStore) HandleList(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"anomalies": result,
-		"total":     len(s.anomalies),
+		"total":     total,
 	})
 }
 
@@ -90,22 +92,25 @@ func (s *AnomalyStore) HandleGet(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	anomaly, ok := s.byID[id]
+	var result Anomaly
+	if ok {
+		result = *anomaly
+	}
+	s.mu.RUnlock()
+
 	if !ok {
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(anomaly)
+	json.NewEncoder(w).Encode(result)
 }
 
 // HandleStats returns aggregated statistics.
 func (s *AnomalyStore) HandleStats(w http.ResponseWriter, r *http.Request) {
 	s.mu.RLock()
-	defer s.mu.RUnlock()
 
 	total := len(s.anomalies)
 	anomalous := 0
@@ -117,6 +122,7 @@ func (s *AnomalyStore) HandleStats(w http.ResponseWriter, r *http.Request) {
 		}
 		totalLatency += a.LatencyMs
 	}
+	s.mu.RUnlock()
 
 	avgLatency := float32(0)
 	if total > 0 {
