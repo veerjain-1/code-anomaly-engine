@@ -21,6 +21,18 @@ func waitFor(t *testing.T, done <-chan struct{}, message string) {
 	}
 }
 
+// A no-op unregister event is a barrier: Run must finish handling the previous
+// registration before it can receive another event. Sending on register alone
+// only proves that Run received the client, not that it updated the map yet.
+func syncHub(t *testing.T, h *Hub) {
+	t.Helper()
+	select {
+	case h.unregister <- &Client{}:
+	case <-time.After(3 * time.Second):
+		t.Fatal("hub did not process the event barrier")
+	}
+}
+
 func TestCloseStopsRun(t *testing.T) {
 	for _, before := range []bool{false, true} {
 		name := "after-start"
@@ -34,6 +46,9 @@ func TestCloseStopsRun(t *testing.T) {
 				h.Close()
 			}
 			go func() { h.Run(); close(done) }()
+			if !before {
+				syncHub(t, h)
+			}
 			h.Close()
 			h.Close()
 			waitFor(t, done, "Run did not return after Close")
@@ -76,6 +91,7 @@ func TestCloseDisconnectsClientAndRejectsNewConnections(t *testing.T) {
 	}
 	defer conn.Close()
 	waitFor(t, registered, "websocket handler did not finish registration")
+	syncHub(t, h)
 	if h.ClientCount() != 1 {
 		t.Fatal("client was not registered")
 	}
