@@ -61,6 +61,10 @@ docker-compose up --build -d
 | **Inference** | `grpc://localhost:50051` | Rust ONNX gRPC Backend |
 | **Kafka** | `localhost:9092` | Internal event broker |
 
+The webhook receiver accepts request bodies up to **25 MiB (26,214,400 bytes)**. Larger bodies receive HTTP `413 Payload Too Large`, including chunked requests without a declared content length. Signature validation still applies to accepted payloads.
+
+Gateway REST responses use snapshots of the in-memory anomaly store: sorting and response writes release the store lock so slow HTTP clients do not block incoming results. `/api/anomalies` returns the newest 100 entries and a total from the same snapshot.
+
 ## 🧠 Machine Learning
 
 The anomaly detection model is based on [Microsoft's CodeBERT](https://huggingface.co/microsoft/codebert-base) fine-tuned on the [Devign Dataset](https://arxiv.org/abs/1909.03496) (27k vulnerable and clean C/C++ functions).
