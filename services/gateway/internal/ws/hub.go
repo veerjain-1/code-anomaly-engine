@@ -29,7 +29,8 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 	mu         sync.RWMutex
-	closed     bool
+	done       chan struct{}
+	closeOnce  sync.Once
 }
 
 // NewHub creates a new WebSocket hub.
@@ -39,6 +40,7 @@ func NewHub() *Hub {
 		broadcast:  make(chan []byte, 256),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
+		done:       make(chan struct{}),
 	}
 }
 
@@ -46,47 +48,56 @@ func NewHub() *Hub {
 func (h *Hub) Run() {
 	for {
 		select {
+		case <-h.done:
+			return
 		case client := <-h.register:
 			h.mu.Lock()
+			select {
+			case <-h.done:
+				close(client.send)
+				if client.conn != nil {
+					client.conn.Close()
+				}
+				h.mu.Unlock()
+				return
+			default:
+			}
 			h.clients[client] = true
 			h.mu.Unlock()
 			slog.Info("WebSocket client connected", "total", h.ClientCount())
-
 		case client := <-h.unregister:
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
-				delete(h.clients, client)
-				close(client.send)
+				h.removeClient(client)
 			}
 			h.mu.Unlock()
 			slog.Info("WebSocket client disconnected", "total", h.ClientCount())
-
 		case message := <-h.broadcast:
-			h.mu.RLock()
+			// Keep eviction and shutdown under the same lock; sends never block.
+			h.mu.Lock()
 			for client := range h.clients {
 				select {
 				case client.send <- message:
 				default:
-					// Client buffer full, disconnect
-					h.mu.RUnlock()
-					h.mu.Lock()
-					close(client.send)
-					delete(h.clients, client)
-					h.mu.Unlock()
-					h.mu.RLock()
+					h.removeClient(client)
 				}
 			}
-			h.mu.RUnlock()
+			h.mu.Unlock()
 		}
 	}
 }
 
-// Broadcast sends a message to all connected clients.
+// Broadcast queues a message, or returns when the hub is shutting down.
 func (h *Hub) Broadcast(message []byte) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	if !h.closed {
-		h.broadcast <- message
+	select {
+	case <-h.done:
+		return
+	default:
+	}
+	// Never hold the client-map lock while waiting for queue capacity.
+	select {
+	case h.broadcast <- message:
+	case <-h.done:
 	}
 }
 
@@ -97,58 +108,70 @@ func (h *Hub) ClientCount() int {
 	return len(h.clients)
 }
 
-// Close shuts down the hub.
+// Close signals the event loop to stop and disconnects all clients.
+// It is safe to call repeatedly, concurrently, or before Run.
 func (h *Hub) Close() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.closed = true
-	for client := range h.clients {
-		close(client.send)
-		delete(h.clients, client)
+	h.closeOnce.Do(func() {
+		close(h.done)
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		for client := range h.clients {
+			h.removeClient(client)
+		}
+	})
+}
+
+// removeClient requires h.mu to be held for writing and the client to be registered.
+func (h *Hub) removeClient(client *Client) {
+	delete(h.clients, client)
+	close(client.send)
+	if client.conn != nil {
+		client.conn.Close()
 	}
 }
 
 // HandleWebSocket upgrades HTTP connections to WebSocket and registers
 // the client with the hub.
 func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	select {
+	case <-h.done:
+		http.Error(w, "WebSocket hub is shutting down", http.StatusServiceUnavailable)
+		return
+	default:
+	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		slog.Error("WebSocket upgrade failed", "error", err)
 		return
 	}
-
-	client := &Client{
-		hub:  h,
-		conn: conn,
-		send: make(chan []byte, 256),
+	client := &Client{hub: h, conn: conn, send: make(chan []byte, 256)}
+	select {
+	case h.register <- client:
+	case <-h.done:
+		conn.Close()
+		return
 	}
-
-	h.register <- client
-
+	unregister := func() {
+		conn.Close()
+		select {
+		case h.unregister <- client:
+		case <-h.done:
+		}
+	}
 	// Write pump
 	go func() {
-		defer func() {
-			conn.Close()
-			h.unregister <- client
-		}()
-
+		defer unregister()
 		for message := range client.send {
 			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
 		}
 	}()
-
 	// Read pump (keep alive + handle client disconnect)
 	go func() {
-		defer func() {
-			h.unregister <- client
-			conn.Close()
-		}()
-
+		defer unregister()
 		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
+			if _, _, err := conn.ReadMessage(); err != nil {
 				return
 			}
 		}
