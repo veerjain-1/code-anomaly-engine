@@ -29,6 +29,12 @@ services:
     depends_on:
       gateway:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   grafana:
     image: grafana/grafana:10.4.0
@@ -39,7 +45,14 @@ services:
     volumes:
       - ./infra/grafana/dashboards:/etc/grafana/provisioning/dashboards
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   # ─── Application Services ──────────────────────────────────
   ingestion:
@@ -73,6 +86,13 @@ services:
       RUST_LOG: info
     volumes:
       - ./services/inference/models:/app/models
+    healthcheck:
+      # Plain-HTTP /health listener from services/inference/src/health.rs (--health-port, default 8080).
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   gateway:
     build:
@@ -88,7 +108,7 @@ services:
       kafka:
         condition: service_healthy
       inference:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
       interval: 10s
